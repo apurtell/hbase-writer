@@ -45,7 +45,7 @@ import org.archive.io.ArchiveFileConstants;
  */
 public class HBaseParameters implements ArchiveFileConstants {
 
-    public static final String CRAWL_TABLE_NAME = "crawl";
+    public static final String CONTENT_TABLE_NAME = "content";
     public static final String URL_TABLE_NAME = "url";
 
     // "content" column family and qualifiers
@@ -68,7 +68,7 @@ public class HBaseParameters implements ArchiveFileConstants {
     // the zk client port name, this has to match what is in hbase-site.xml for the clientPort config attribute.
     public static String ZOOKEEPER_CLIENT_PORT = "hbase.zookeeper.property.clientPort";
 
-    private String crawlTableName = CRAWL_TABLE_NAME;
+    private String contentTableName = CONTENT_TABLE_NAME;
     private String urlTableName = URL_TABLE_NAME;
 
     private String contentColumnFamily = CONTENT_COLUMN_FAMILY;
@@ -86,12 +86,12 @@ public class HBaseParameters implements ArchiveFileConstants {
     private String statusColumnName = STATUS_COLUMN_NAME;
     private String sourceTagColumnName = SOURCE_TAG_COLUMN_NAME;
 
-    public String getCrawlTableName() {
-      return crawlTableName;
+    public String getContentTableName() {
+      return contentTableName;
     }
 
-    public void setCrawlTableName(String crawlTableName) {
-      this.crawlTableName = crawlTableName;
+    public void setContentTableName(String contentTableName) {
+      this.contentTableName = contentTableName;
     }
 
     public String getUrlTableName() {

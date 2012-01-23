@@ -43,7 +43,7 @@ import org.archive.modules.CrawlURI;
  */
 public class HBaseWriter extends WriterPoolMember {
     private HBaseParameters hbaseOptions;
-    private final HTable crawlTable;
+    private final HTable contentTable;
     private final HTable urlTable;
 
     private static final Pattern URI_RE_PARSER =
@@ -56,8 +56,8 @@ public class HBaseWriter extends WriterPoolMember {
         return hbaseOptions;
     }
 
-    public HTable getCrawlTable() {
-      return crawlTable;
+    public HTable getContentTable() {
+      return contentTable;
     }
 
     public HTable getUrlTable() {
@@ -65,7 +65,7 @@ public class HBaseWriter extends WriterPoolMember {
     }
 
     /**
-     * Instantiates a new HBaseWriter for the WriterPool to use in heritrix2.
+     * Instantiates a new HBaseWriter for the WriterPool
      * 
      * @throws IOException Signals that an I/O exception has occurred.
      */
@@ -73,35 +73,10 @@ public class HBaseWriter extends WriterPoolMember {
         final HBaseParameters parameters) throws IOException {
       super(null, new HBaseWriterPoolSettings(), null);
       this.hbaseOptions = parameters;
-      this.crawlTable = new HTable(conf, hbaseOptions.getCrawlTableName());
-      this.crawlTable.setAutoFlush(false);
+      this.contentTable = new HTable(conf, hbaseOptions.getContentTableName());
+      this.contentTable.setAutoFlush(false);
       this.urlTable = new HTable(conf, hbaseOptions.getUrlTableName());
       this.urlTable.setAutoFlush(false);
-    }
-
-    /**
-     * This is a stub method and is here to allow extension/overriding for
-     * custom content parsing, data manipulation and to populate new columns.
-     * 
-     * For Example : html parsing, text extraction, analysis and transformation
-     * and storing the results in new column families/columns using the batch
-     * update object. Or even saving the values in other custom hbase tables 
-     * or other remote data sources. (a.k.a. anything you want)
-     * 
-     * @param put the stateful put object containing all the row data to be written.
-     * @param replayInputStream the replay input stream containing the raw content gotten by heritrix crawler.
-     * @param streamSize the stream size
-     * 
-     * @throws IOException Signals that an I/O exception has occurred.
-     */
-    protected void processContent(Put put, ReplayInputStream replayInputStream, int streamSize) throws IOException {
-        // Below is just an example of a typical use case of overriding this method.
-        // I.E.: The goal below is to process the raw content array and parse it to a new byte array.....
-        // byte[] rowKey = put.getRow();
-        // byte[] rawContent = this.getByteArrayFromInputStream(replayInputStream, streamSize)
-        // // process rawContent and create output to store in new columns. 
-        // byte[] someParsedByteArray = userDefinedMethondToProcessRawContent(rawContent);
-        // put.add(Bytes.toBytes("some_column_family"), Bytes.toBytes("a_new_column_name"), someParsedByteArray);
     }
 
     /**
@@ -154,7 +129,7 @@ public class HBaseWriter extends WriterPoolMember {
           if (pathFromSeed.length() > 0) {
             curiPut.add(curiFamily,
                 Bytes.toBytes(getHbaseOptions().getPathFromSeedColumnName()),
-                Bytes.toBytes(curi.getPathFromSeed().trim()));
+                Bytes.toBytes(pathFromSeed));
           }
         }
 
@@ -235,7 +210,7 @@ public class HBaseWriter extends WriterPoolMember {
                 Bytes.toBytes(getHbaseOptions().getUrlColumnName()),
                 Bytes.toBytes(rowKey));
 
-            getCrawlTable().put(contentPut);
+            getContentTable().put(contentPut);
           }
         } finally {
           IOUtils.closeStream(response);
@@ -246,8 +221,8 @@ public class HBaseWriter extends WriterPoolMember {
 
     @Override
     public void close() throws IOException {
-        this.crawlTable.close();
-        this.urlTable.close();
+        getContentTable().close();
+        getUrlTable().close();
         super.close();
     }
 
