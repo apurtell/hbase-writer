@@ -264,16 +264,13 @@ public class HBaseWriterProcessor extends WriterPoolProcessor {
           + getPool().toString() + " - exception is: \n" + e1.getMessage());
       return false;
     }
-
-    HTable hbaseTable = ((HBaseWriter) writerPoolMember).getCrawlTable();
-    // Here we can generate the rowkey for this uri ...
     String url = curi.toString();
     String row = HBaseWriter.createURLKey(url);
     try {
+      HTable urlTable = ((HBaseWriter) writerPoolMember).getUrlTable();
+      // Here we can generate the rowkey for this uri ...
       // and look it up to see if it already exists...
-      Get rowToGet = new Get(Bytes.toBytes(row));
-      if (hbaseTable.get(rowToGet) != null
-          && !hbaseTable.get(rowToGet).isEmpty()) {
+      if (urlTable.exists(new Get(Bytes.toBytes(row)))) {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Not A NEW Record - Url: " + url
               + " has the existing rowkey: " + row + " and has cell data.");
