@@ -23,15 +23,19 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.IOUtils;
+
 import org.archive.io.RecordingInputStream;
 import org.archive.io.RecordingOutputStream;
 import org.archive.io.ReplayInputStream;
@@ -42,27 +46,13 @@ import org.archive.modules.CrawlURI;
  * HBase implementation.
  */
 public class HBaseWriter extends WriterPoolMember {
+  
     private HBaseParameters hbaseOptions;
     private final HTable contentTable;
     private final HTable urlTable;
 
     private static final Pattern URI_RE_PARSER =
       Pattern.compile("^([^:/?#]+://(?:[^/?#@]+@)?)([^:/?#]+)(.*)$");
-
-    /**
-     * @see org.archive.io.hbase.HBaseParameters
-     */
-    public HBaseParameters getHbaseOptions() {
-        return hbaseOptions;
-    }
-
-    public HTable getContentTable() {
-      return contentTable;
-    }
-
-    public HTable getUrlTable() {
-      return urlTable;
-    }
 
     /**
      * Instantiates a new HBaseWriter for the WriterPool
@@ -79,6 +69,14 @@ public class HBaseWriter extends WriterPoolMember {
       this.urlTable.setAutoFlush(false);
     }
 
+    public HTable getContentTable() {
+      return contentTable;
+    }
+
+    public HTable getUrlTable() {
+      return urlTable;
+    }
+
     /**
      * Write the crawled output to the configured HBase table.
      * Write each row key as the url with reverse domain and optionally process any content.
@@ -92,34 +90,30 @@ public class HBaseWriter extends WriterPoolMember {
      */
     public void write(final CrawlURI curi, final String ip, final RecordingOutputStream recordingOutputStream, 
             final RecordingInputStream recordingInputStream) throws IOException {
-        // generate the target url of the crawled document
         String url = curi.toString();
 
-        // create the hbase friendly rowkey
-        String rowKey = HBaseWriter.createURLKey(url);
+        byte[] rowKey = HBaseWriter.createURLKey(url);
 
         byte[] curiFamily =
-            Bytes.toBytes(getHbaseOptions().getCuriColumnFamily());
+            Bytes.toBytes(hbaseOptions.getCuriColumnFamily());
         byte[] contentFamily =
-            Bytes.toBytes(getHbaseOptions().getContentColumnFamily());
+            Bytes.toBytes(hbaseOptions.getContentColumnFamily());
 
-        // create an hbase updateable object (the put object)
-        // Constructor takes the rowkey as the only argument
-        Put curiPut = new Put(Bytes.toBytes(rowKey));
+        Put curiPut = new Put(rowKey);
 
         // status
         curiPut.add(curiFamily,
-            Bytes.toBytes(getHbaseOptions().getStatusColumnName()),
+            Bytes.toBytes(hbaseOptions.getStatusColumnName()),
             Bytes.toBytes(curi.getFetchStatus()));
 
         // write the target url to the url column
         curiPut.add(curiFamily,
-            Bytes.toBytes(getHbaseOptions().getUrlColumnName()),
+            Bytes.toBytes(hbaseOptions.getUrlColumnName()),
             Bytes.toBytes(url));
 
         // write the target ip to the ip column
         curiPut.add(curiFamily, 
-            Bytes.toBytes(getHbaseOptions().getIpColumnName()),
+            Bytes.toBytes(hbaseOptions.getIpColumnName()),
             Bytes.toBytes(ip));
 
         // path from seed
@@ -128,7 +122,7 @@ public class HBaseWriter extends WriterPoolMember {
           pathFromSeed = pathFromSeed.trim();
           if (pathFromSeed.length() > 0) {
             curiPut.add(curiFamily,
-                Bytes.toBytes(getHbaseOptions().getPathFromSeedColumnName()),
+                Bytes.toBytes(hbaseOptions.getPathFromSeedColumnName()),
                 Bytes.toBytes(pathFromSeed));
           }
         }
@@ -138,8 +132,8 @@ public class HBaseWriter extends WriterPoolMember {
           String viaStr = curi.getVia().toString().trim();
           if (viaStr.length() > 0) {
             curiPut.add(curiFamily,
-                Bytes.toBytes(getHbaseOptions().getViaColumnName()),
-                Bytes.toBytes(HBaseWriter.createURLKey(viaStr)));
+                Bytes.toBytes(hbaseOptions.getViaColumnName()),
+                HBaseWriter.createURLKey(viaStr));
           }
         }
 
@@ -147,7 +141,7 @@ public class HBaseWriter extends WriterPoolMember {
         String sourceTag = curi.getSourceTag();
         if (sourceTag != null) {
           curiPut.add(curiFamily,
-              Bytes.toBytes(getHbaseOptions().getSourceTagColumnName()),
+              Bytes.toBytes(hbaseOptions.getSourceTagColumnName()),
               Bytes.toBytes(sourceTag));
         }
 
@@ -156,7 +150,7 @@ public class HBaseWriter extends WriterPoolMember {
         if (contentType != null) {
           // add the mime type of the response 
           curiPut.add(curiFamily,
-              Bytes.toBytes(getHbaseOptions().getMimeTypeColumnName()),
+              Bytes.toBytes(hbaseOptions.getMimeTypeColumnName()),
               Bytes.toBytes(contentType));
         }
 
@@ -167,7 +161,7 @@ public class HBaseWriter extends WriterPoolMember {
             ByteArrayOutputStream os = new ByteArrayOutputStream();
             request.readContentTo(os);
             curiPut.add(curiFamily,
-                Bytes.toBytes(getHbaseOptions().getRequestColumnName()),
+                Bytes.toBytes(hbaseOptions.getRequestColumnName()),
                 os.toByteArray());
           } finally {
             IOUtils.closeStream(request);
@@ -184,7 +178,7 @@ public class HBaseWriter extends WriterPoolMember {
             ByteArrayOutputStream os = new ByteArrayOutputStream();
             response.readHeaderTo(os);
             curiPut.add(curiFamily,
-                Bytes.toBytes(getHbaseOptions().getResponseColumnName()),
+                Bytes.toBytes(hbaseOptions.getResponseColumnName()),
                 os.toByteArray());
           }
 
@@ -194,29 +188,37 @@ public class HBaseWriter extends WriterPoolMember {
             response.readContentTo(os);
             byte[] content = os.toByteArray();
 
-            String hashKey = HBaseWriter.createHashKey(content);
+            byte[] hashKey = HBaseWriter.createHashKey(content);
 
             curiPut.add(curiFamily,
-                Bytes.toBytes(getHbaseOptions().getHashColumnName()), 
-                Bytes.toBytes(hashKey));
+                Bytes.toBytes(hbaseOptions.getHashColumnName()), hashKey);
 
-            Put contentPut = new Put(Bytes.toBytes(hashKey));
+            List<Put> puts = new ArrayList<Put>(2);
 
-            contentPut.add(contentFamily, 
-                Bytes.toBytes(getHbaseOptions().getContentColumnName()),
-                content);
+            puts.add(new Put(hashKey).add(curiFamily, rowKey,
+                HConstants.EMPTY_BYTE_ARRAY)); // store something useful?
 
-            contentPut.add(curiFamily,
-                Bytes.toBytes(getHbaseOptions().getUrlColumnName()),
-                Bytes.toBytes(rowKey));
+            byte[] contentQualifier =
+                Bytes.toBytes(hbaseOptions.getContentColumnName());
+            // if existence check fails, store an placeholder atomically
+            if (contentTable.checkAndPut(hashKey, contentFamily,
+                  contentQualifier, null,
+                  new Put(hashKey)
+                    .add(contentFamily, contentQualifier,
+                       HConstants.EMPTY_BYTE_ARRAY))) {
+              // and follow up with a (write buffered) store of the real
+              // content
+              puts.add(new Put(hashKey).add(contentFamily, contentQualifier,
+                  content));
+            }
 
-            getContentTable().put(contentPut);
+            contentTable.put(puts);
           }
         } finally {
           IOUtils.closeStream(response);
         }
 
-        getUrlTable().put(curiPut);
+        urlTable.put(curiPut);
     }
 
     @Override
@@ -249,15 +251,15 @@ public class HBaseWriter extends WriterPoolMember {
       return sb.toString();
     }
 
-    public static String createURLKey(final String u) {
+    public static byte[] createURLKey(final String u) {
       Matcher m = getMatcher(u);
       if (m == null || !m.matches()) {
         // dns "URLs" don't match as them
         if (u.startsWith("dns:")) {
-          return reverseHostname(u.substring(4));
+          return Bytes.toBytes(reverseHostname(u.substring(4)));
         }
         // If no match, return original String.
-        return u;
+        return Bytes.toBytes(u);
       }
       //String scheme = m.group(1);
       String host = m.group(2);
@@ -265,23 +267,12 @@ public class HBaseWriter extends WriterPoolMember {
       if (path.isEmpty()) {
         path = "/";
       }
-      return reverseHostname(host) + path;
+      return Bytes.toBytes(reverseHostname(host) + path);
     }
 
-    private static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
-
-    static String asHex(byte[] buf) {
-      char[] chars = new char[2 * buf.length];
-      for (int i = 0; i < buf.length; ++i) {
-        chars[2 * i] = HEX_CHARS[(buf[i] & 0xF0) >>> 4];
-        chars[2 * i + 1] = HEX_CHARS[buf[i] & 0x0F];
-      }
-      return new String(chars);
-    }
-
-    public static String createHashKey(byte[] content) throws IOException {
+    public static byte[] createHashKey(byte[] content) throws IOException {
       try {
-        return asHex(MessageDigest.getInstance("SHA1").digest(content));
+        return MessageDigest.getInstance("SHA1").digest(content);
       } catch (NoSuchAlgorithmException e) {
         throw new IOException(e);
       }      

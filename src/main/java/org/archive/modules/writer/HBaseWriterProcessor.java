@@ -76,19 +76,6 @@ public class HBaseWriterProcessor extends WriterPoolProcessor {
   HBaseParameters hbaseParameters = null;
 
   /**
-   * If set to true, then only write urls that are new rowkey records. Default
-   * is false, which will write all urls to the HBase table. Heritrix is good
-   * about not hitting the same url twice, so this feature is to ensure that you
-   * can run multiple sessions of the same crawl configuration and not write the
-   * same url more than once to the same hbase table. You may just want to crawl
-   * a site to see what new urls have been added over time, or continue where
-   * you left off on a terminated crawl. Heritrix itself does support this
-   * functionalty by supporting "Checkpoints" during a crawl session, so this
-   * may not be a necessary option.
-   */
-  private boolean onlyWriteNewRecords = false;
-
-  /**
    * If set to true, then only process urls that are new rowkey records. Default
    * is false, which will process all urls to the HBase table. In this mode,
    * Heritrix wont even fetch and parse the content served at the url if it
@@ -125,14 +112,6 @@ public class HBaseWriterProcessor extends WriterPoolProcessor {
 
   public void setHbaseParameters(HBaseParameters options) {
     this.hbaseParameters = options;
-  }
-
-  public boolean onlyWriteNewRecords() {
-    return onlyWriteNewRecords;
-  }
-
-  public void setOnlyWriteNewRecords(boolean onlyWriteNewRecords) {
-    this.onlyWriteNewRecords = onlyWriteNewRecords;
   }
 
   public boolean onlyProcessNewRecords() {
@@ -236,12 +215,6 @@ public class HBaseWriterProcessor extends WriterPoolProcessor {
       return false;
     }
 
-    // If onlyWriteNewRecords is enabled and the given rowkey has cell data,
-    // don't write the record.
-    if (onlyWriteNewRecords()) {
-      return isRecordNew(curi);
-    }
-
     // all tests pass, return true to write the content locally.
     return true;
   }
@@ -265,21 +238,22 @@ public class HBaseWriterProcessor extends WriterPoolProcessor {
       return false;
     }
     String url = curi.toString();
-    String row = HBaseWriter.createURLKey(url);
+    byte[] rowKey = HBaseWriter.createURLKey(url);
     try {
       HTable urlTable = ((HBaseWriter) writerPoolMember).getUrlTable();
       // Here we can generate the rowkey for this uri ...
       // and look it up to see if it already exists...
-      if (urlTable.exists(new Get(Bytes.toBytes(row)))) {
+      if (urlTable.exists(new Get(rowKey))) {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Not A NEW Record - Url: " + url
-              + " has the existing rowkey: " + row + " and has cell data.");
+              + " has the existing rowkey: " + Bytes.toStringBinary(rowKey) +
+              " and has cell data.");
         }
         return false;
       }
     } catch (IOException e) {
       LOG.error("Failed to determine if record: "
-          + row
+          + Bytes.toStringBinary(rowKey)
           + " is a new record due to IOExecption.  Deciding the record is already existing for now. \n"
           + e.getMessage());
       return false;
@@ -288,7 +262,7 @@ public class HBaseWriterProcessor extends WriterPoolProcessor {
         getPool().returnFile(writerPoolMember);
       } catch (IOException e) {
         LOG.error("Failed to add back writer to the pool after checking if a rowkey is new or existing: "
-            + row + "\n" + e.getMessage());
+            + Bytes.toStringBinary(rowKey) + "\n" + e.getMessage());
         return false;
       }
     }
